@@ -9,6 +9,9 @@ dependencies = [
     "httpx",
     "python-dotenv",
 
+    # Gemini (for lightweight intent classification)
+    "google-genai",
+
     # macOS APIs
     "pyobjc-framework-Cocoa",
     "pyobjc-framework-Quartz",

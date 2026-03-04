@@ -13,7 +13,7 @@ import httpx
 from client.action.executor import execute_action
 from client.perception.screenshot import capture_screen
 from client.perception.accessibility import read_accessibility_tree
-from client.router import classify
+from client.router import classify, needs_screen
 from client.safety.guard import enforce_safety
 from client.utils.config import (
     SERVER_URL, APP_NAME, USER_ID, MAX_STEPS, STEP_DELAY,
@@ -222,12 +222,16 @@ async def handle_command(command: str, session_id: str | None = None, tts=None):
 
 
 async def chat_loop(command: str, session_id: str, tts=None):
-    """Chat mode — capture screen, send screenshot + question, get text answer."""
+    """Chat mode — optionally capture screen, send question, get text answer."""
     print(f"\nSession: {session_id[:8]}...")
     print(f"Command: {command}\n")
 
-    print("  Capturing screen...")
-    screenshot_b64, sw, sh = capture_screen()
+    screenshot_b64 = None
+    if await needs_screen(command):
+        print("  Capturing screen (question references screen)...")
+        screenshot_b64, sw, sh = capture_screen()
+    else:
+        print("  Skipping screenshot (general question)")
 
     async with httpx.AsyncClient() as client:
         try:

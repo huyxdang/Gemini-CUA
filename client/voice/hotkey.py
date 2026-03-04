@@ -44,6 +44,8 @@ class HotkeyListener:
         self._listener: keyboard.Listener | None = None
         self._loop: asyncio.AbstractEventLoop | None = None
         self._is_held = False
+        self._press_time: float = 0.0
+        self._min_hold: float = 0.25  # ignore releases faster than 250ms
         # Kill switch: triple-press Escape
         self._esc_times: list[float] = []
         self._kill_window = 1.0  # 3 presses within 1 second
@@ -82,6 +84,7 @@ class HotkeyListener:
 
         if key == self._target_key and not self._is_held:
             self._is_held = True
+            self._press_time = time.monotonic()
             _play_sound(SOUND_START)
             if self._loop is not None:
                 self._loop.call_soon_threadsafe(self._pressed_event.set)
@@ -89,6 +92,10 @@ class HotkeyListener:
     def _on_release(self, key):
         """Called when any key is released."""
         if key == self._target_key and self._is_held:
+            # Debounce: ignore releases that happen too quickly (modifier key bounce)
+            held_for = time.monotonic() - self._press_time
+            if held_for < self._min_hold:
+                return
             self._is_held = False
             _play_sound(SOUND_STOP)
             if self._loop is not None:
