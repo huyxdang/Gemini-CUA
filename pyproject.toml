@@ -1,0 +1,37 @@
+[project]
+name = "macagent"
+version = "0.1.0"
+description = "Voice-controlled macOS desktop agent powered by Gemini on Google Cloud"
+requires-python = ">=3.11"
+
+dependencies = [
+    # Cloud communication
+    "httpx",
+    "python-dotenv",
+
+    # macOS APIs
+    "pyobjc-framework-Cocoa",
+    "pyobjc-framework-Quartz",
+    "pyobjc-framework-ApplicationServices",
+
+    # Image processing
+    "Pillow",
+
+    # Terminal output
+    "rich",
+]
+
+[project.optional-dependencies]
+voice = [
+    "google-cloud-speech",
+    "sounddevice",
+    "numpy",
+    "pynput",
+]
+
+[tool.setuptools.packages.find]
+include = ["client*"]
+
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
