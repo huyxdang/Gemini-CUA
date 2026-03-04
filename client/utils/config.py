@@ -12,6 +12,10 @@ GOOGLE_CLOUD_PROJECT = os.getenv("GOOGLE_CLOUD_PROJECT", "")
 APP_NAME = "mac_agent"
 USER_ID = "user_1"
 
+# ElevenLabs TTS
+ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY", "")
+ELEVENLABS_VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID", "JBFqnCBsd6RMkjVDRZzb")
+
 # Screenshot settings
 SCREENSHOT_WIDTH = 1280
 

@@ -29,8 +29,24 @@ The agent loop repeats (capture -> send -> execute) until the task is done or th
 - Python 3.11+
 - A Google Cloud project with billing enabled
 - [Google Cloud SDK](https://cloud.google.com/sdk/docs/install) (`gcloud`)
+- (Optional) [ElevenLabs](https://elevenlabs.io/) API key for spoken responses
 
-### 1. Clone and install
+### 1. Install Google Cloud SDK
+
+```bash
+# Install via the official installer
+curl https://sdk.cloud.google.com | bash
+
+# Restart your shell, then authenticate
+gcloud auth login
+gcloud auth application-default login
+gcloud auth application-default set-quota-project YOUR_PROJECT_ID
+
+# Enable the Speech-to-Text API (required for voice mode)
+gcloud services enable speech.googleapis.com --project=YOUR_PROJECT_ID
+```
+
+### 2. Clone and install
 
 ```bash
 git clone https://github.com/YOUR_USERNAME/Gemini-CUA.git
@@ -41,14 +57,14 @@ pip install -e .
 pip install -e ".[voice]"
 ```
 
-### 2. Grant macOS permissions
+### 3. Grant macOS permissions
 
 Go to **System Settings > Privacy & Security** and enable for your terminal app:
 - **Screen Recording**
 - **Accessibility**
 - **Microphone** (voice mode only)
 
-### 3. Deploy the agent to Cloud Run
+### 4. Deploy the agent to Cloud Run
 
 ```bash
 # Install ADK
@@ -81,7 +97,7 @@ gcloud run deploy macagent \
   --allow-unauthenticated
 ```
 
-### 4. Configure the client
+### 5. Configure the client
 
 ```bash
 cp .env.example .env
@@ -91,9 +107,13 @@ Edit `.env`:
 ```
 SERVER_URL=https://macagent-XXXXXXXX-uc.a.run.app
 GOOGLE_CLOUD_PROJECT=your-project-id
+
+# Optional: enable spoken responses in voice mode
+ELEVENLABS_API_KEY=your-elevenlabs-api-key
+ELEVENLABS_VOICE_ID=JBFqnCBsd6RMkjVDRZzb
 ```
 
-### 5. Run
+### 6. Run
 
 **Text mode:**
 ```bash
@@ -102,11 +122,10 @@ python -m client
 
 **Voice mode:**
 ```bash
-# Set up Google Cloud STT credentials
-gcloud auth application-default login
-
 python -m client --voice
 ```
+
+If ElevenLabs is configured, chat-mode responses will be spoken aloud before returning to "Listening...".
 
 ## Usage
 
@@ -178,7 +197,8 @@ macagent/
 │   │   └── keyboard.py              # Type text, key combos
 │   ├── voice/
 │   │   ├── hotkey.py                # Hold-to-talk (Right Option)
-│   │   └── stt.py                   # Google Cloud STT streaming
+│   │   ├── stt.py                   # Google Cloud STT streaming
+│   │   └── tts.py                   # ElevenLabs TTS (spoken responses)
 │   ├── safety/
 │   │   └── guard.py                 # Pre-execution safety checks
 │   └── utils/
@@ -215,6 +235,7 @@ The agent returns one action per step:
 - **LLM:** Gemini 2.5 Flash (multimodal — vision + text)
 - **Hosting:** Google Cloud Run
 - **Speech-to-text:** Google Cloud Speech-to-Text (streaming)
+- **Text-to-speech:** ElevenLabs (optional, for spoken responses)
 - **macOS APIs:** CoreGraphics (screenshots, mouse/keyboard events), Accessibility (AX tree)
 - **Client deps:** httpx, pyobjc, Pillow, pynput, sounddevice
 

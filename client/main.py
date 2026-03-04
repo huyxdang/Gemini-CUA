@@ -15,7 +15,10 @@ from client.perception.screenshot import capture_screen
 from client.perception.accessibility import read_accessibility_tree
 from client.router import classify
 from client.safety.guard import enforce_safety
-from client.utils.config import SERVER_URL, APP_NAME, USER_ID, MAX_STEPS, STEP_DELAY
+from client.utils.config import (
+    SERVER_URL, APP_NAME, USER_ID, MAX_STEPS, STEP_DELAY,
+    ELEVENLABS_API_KEY, ELEVENLABS_VOICE_ID,
+)
 from client.utils.logger import SessionLogger
 from client.utils.permissions import check_permissions
 
@@ -204,7 +207,7 @@ def _parse_action(text: str) -> dict:
         }
 
 
-async def handle_command(command: str, session_id: str | None = None):
+async def handle_command(command: str, session_id: str | None = None, tts=None):
     """Route a command to UI mode or chat mode, then execute."""
     if session_id is None:
         session_id = str(uuid4())
@@ -213,12 +216,12 @@ async def handle_command(command: str, session_id: str | None = None):
     print(f"  [{mode.upper()} mode]")
 
     if mode == "chat":
-        await chat_loop(command, session_id)
+        await chat_loop(command, session_id, tts=tts)
     else:
         await ui_loop(command, session_id)
 
 
-async def chat_loop(command: str, session_id: str):
+async def chat_loop(command: str, session_id: str, tts=None):
     """Chat mode — capture screen, send screenshot + question, get text answer."""
     print(f"\nSession: {session_id[:8]}...")
     print(f"Command: {command}\n")
@@ -230,6 +233,8 @@ async def chat_loop(command: str, session_id: str):
         try:
             response_text = await send_chat(client, session_id, command, screenshot_b64)
             print(f"  Agent: {response_text}\n")
+            if tts and response_text:
+                await tts.speak(response_text)
         except httpx.HTTPError as e:
             print(f"  HTTP error: {e}")
 
@@ -344,6 +349,15 @@ async def voice_main():
         print("Set GOOGLE_APPLICATION_CREDENTIALS or run: gcloud auth application-default login")
         sys.exit(1)
 
+    # Initialize TTS if API key is configured
+    tts = None
+    if ELEVENLABS_API_KEY:
+        from client.voice.tts import ElevenLabsTTS
+        tts = ElevenLabsTTS(api_key=ELEVENLABS_API_KEY, voice_id=ELEVENLABS_VOICE_ID)
+        print("TTS: ElevenLabs enabled")
+    else:
+        print("TTS: disabled (set ELEVENLABS_API_KEY to enable)")
+
     print("macOS Computer-Use Agent (Voice Mode)")
     print("=" * 50)
     print(f"Server: {SERVER_URL}")
@@ -386,7 +400,7 @@ async def voice_main():
                 continue
 
             print(f'"{transcript}"\n')
-            await handle_command(command=transcript, session_id=session_id)
+            await handle_command(command=transcript, session_id=session_id, tts=tts)
             print()
 
     except KeyboardInterrupt:
