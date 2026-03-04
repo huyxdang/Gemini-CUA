@@ -30,11 +30,16 @@ class StreamingSTT:
         self._stream: sd.InputStream | None = None
         self._is_recording = False
         self._client = speech.SpeechClient()
+        # Diagnostics
+        self._chunk_count = 0
+        self._peak_rms = 0.0
 
     def start(self):
         """Start recording audio from the default microphone."""
         self._audio_queue = queue.Queue()
         self._is_recording = True
+        self._chunk_count = 0
+        self._peak_rms = 0.0
 
         self._stream = sd.InputStream(
             samplerate=SAMPLE_RATE,
@@ -54,6 +59,9 @@ class StreamingSTT:
             self._stream.close()
             self._stream = None
 
+        # Log diagnostics
+        print(f"  Audio: {self._chunk_count} chunks, peak RMS={self._peak_rms:.1f}")
+
         # Signal end of audio
         self._audio_queue.put(None)
 
@@ -65,6 +73,10 @@ class StreamingSTT:
         if status:
             print(f"  Audio warning: {status}")
         if self._is_recording:
+            self._chunk_count += 1
+            rms = np.sqrt(np.mean(indata.astype(np.float32) ** 2))
+            if rms > self._peak_rms:
+                self._peak_rms = rms
             self._audio_queue.put(bytes(indata))
 
     def _audio_generator(self):

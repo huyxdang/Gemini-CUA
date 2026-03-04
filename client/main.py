@@ -342,6 +342,7 @@ async def ui_loop(command: str, session_id: str):
 async def voice_main():
     """Voice-controlled main loop: hold Right Option to speak."""
     from client.voice.hotkey import HotkeyListener
+    from client.voice.overlay import ListeningOverlay
     from client.voice.stt import StreamingSTT
 
     check_permissions(voice=True)
@@ -366,6 +367,8 @@ async def voice_main():
     print("=" * 50)
     print(f"Server: {SERVER_URL}")
     print("Hold Right Option to speak. Triple-press Escape to abort. Ctrl+C to quit.\n")
+
+    overlay = ListeningOverlay()
 
     loop = asyncio.get_running_loop()
     hotkey = HotkeyListener()
@@ -392,11 +395,15 @@ async def voice_main():
             await hotkey.wait_for_press()
 
             print("Recording... (release to stop)")
+            overlay.show()
             stt.start()
+            rec_start = time.monotonic()
 
             await hotkey.wait_for_release()
+            rec_elapsed = time.monotonic() - rec_start
+            overlay.hide()
 
-            print("Processing speech...")
+            print(f"Processing speech... (recorded {rec_elapsed:.1f}s)")
             transcript = await asyncio.to_thread(stt.stop)
 
             if not transcript:
@@ -410,6 +417,7 @@ async def voice_main():
     except KeyboardInterrupt:
         print("\nBye!")
     finally:
+        overlay.hide()
         hotkey.stop()
 
 
