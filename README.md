@@ -3,6 +3,8 @@
 ```
 # install everything 
 pip instslall -e ".[live]"
+
+# run app
 python -m client --live
 
 ```
