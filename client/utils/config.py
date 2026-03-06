@@ -27,3 +27,6 @@ STEP_DELAY = 0.5  # seconds to wait after each action for UI to settle
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", os.getenv("GOOGLE_API_KEY", ""))
 LIVE_MODEL = os.getenv("LIVE_MODEL", "gemini-2.5-flash-native-audio-preview-12-2025")
 LIVE_VOICE = os.getenv("LIVE_VOICE", "Kore")
+
+# Wake word
+WAKE_PHRASE = os.getenv("WAKE_PHRASE", "hey gemini")

@@ -1,3 +1,12 @@
+# Command Line               
+
+```
+# install everything 
+pip instslall -e ".[live]"
+python -m client --live
+
+```
+
 # macagent
 
 A voice-controlled macOS desktop agent powered by Gemini 2.5 Flash on Google Cloud.

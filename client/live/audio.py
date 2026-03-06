@@ -17,6 +17,18 @@ CHANNELS = 1
 INPUT_CHUNK_SIZE = int(INPUT_SAMPLE_RATE * 0.1)  # 100ms chunks
 
 
+def compute_rms(pcm_int16: np.ndarray, scale: float = 1.0) -> float:
+    """Compute normalized RMS amplitude from int16 PCM samples.
+
+    Returns a value in [0.0, 1.0] after applying the scale factor.
+    Uses dot product on raw int16 to minimize allocations on audio threads.
+    """
+    samples = pcm_int16.ravel()
+    # int16 dot may overflow, but float64 accumulator in np.dot handles it
+    rms = float(np.sqrt(np.dot(samples.astype(np.float64), samples) / max(1, samples.size))) / 32768.0
+    return min(1.0, rms * scale)
+
+
 class AudioInput:
     """Captures microphone audio and yields PCM chunks for the Live API."""
 
@@ -24,6 +36,7 @@ class AudioInput:
         self._queue: queue.Queue[bytes | None] = queue.Queue()
         self._stream: sd.InputStream | None = None
         self._running = False
+        self.latest_amplitude: float = 0.0  # written from audio thread, read from asyncio
 
     def start(self):
         self._running = True
@@ -48,6 +61,7 @@ class AudioInput:
     def _callback(self, indata, frames, time_info, status):
         if self._running:
             self._queue.put(bytes(indata))
+            self.latest_amplitude = compute_rms(indata, scale=5.0)
 
     async def chunks(self):
         """Async generator yielding raw PCM audio chunks."""
@@ -65,6 +79,7 @@ class AudioOutput:
         self._queue: queue.Queue[bytes | None] = queue.Queue()
         self._thread: threading.Thread | None = None
         self._running = False
+        self.latest_amplitude: float = 0.0  # written from playback thread, read from asyncio
 
     def start(self):
         self._running = True
@@ -109,6 +124,10 @@ class AudioOutput:
                 if data is None:
                     break
                 try:
+                    if len(data) >= 2:
+                        self.latest_amplitude = compute_rms(
+                            np.frombuffer(data, dtype=np.int16), scale=4.0
+                        )
                     stream.write(data)
                 except Exception as e:
                     print(f"  Audio playback error: {e}")

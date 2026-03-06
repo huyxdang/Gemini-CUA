@@ -452,7 +452,8 @@ def text_main():
 async def live_main():
     """Live API mode: real-time bidirectional voice + screen via Gemini Live API."""
     from client.live.session import LiveSession
-    from client.utils.config import GEMINI_API_KEY
+    from client.ui.overlay import SiriOverlay
+    from client.utils.config import GEMINI_API_KEY, WAKE_PHRASE
     from client.voice.hotkey import HotkeyListener
 
     if not GEMINI_API_KEY:
@@ -465,9 +466,10 @@ async def live_main():
     print("macOS Computer-Use Agent (Live API Mode)")
     print("=" * 50)
     print("Real-time voice + screen via Gemini Live API")
-    print("Speak naturally. Triple-press Escape to quit.\n")
+    print(f'Say "{WAKE_PHRASE}" to activate. Triple-press Escape to quit.\n')
 
-    session = LiveSession()
+    overlay = SiriOverlay()
+    session = LiveSession(overlay=overlay)
 
     loop = asyncio.get_running_loop()
     hotkey = HotkeyListener()
@@ -508,6 +510,7 @@ async def live_main():
     finally:
         session.stop()
         hotkey.stop()
+        overlay.teardown()
 
 
 def main():

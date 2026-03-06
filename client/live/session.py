@@ -4,7 +4,6 @@ import asyncio
 import base64
 import subprocess
 import time
-import traceback
 
 from google import genai
 from google.genai import types
@@ -15,7 +14,7 @@ from client.live.screen import capture_screen_jpeg
 from client.live.tools import CUA_TOOLS, SYSTEM_PROMPT
 from client.perception.accessibility import read_accessibility_tree
 from client.safety.guard import enforce_safety
-from client.utils.config import GEMINI_API_KEY, LIVE_MODEL, LIVE_VOICE
+from client.utils.config import GEMINI_API_KEY, LIVE_MODEL, LIVE_VOICE, WAKE_PHRASE
 from client.utils.coordinates import screenshot_to_points
 
 # Sessions with images (send_client_content with inline_data) may be treated
@@ -24,15 +23,32 @@ from client.utils.coordinates import screenshot_to_points
 SESSION_WARN_SECS = 90  # warn at 90s into a session
 SESSION_MAX_SECS = 110  # proactively reconnect at 110s (before 120s hard limit)
 
+# How long after the last model output before the overlay fades
+IDLE_TIMEOUT = 3.0
+
+# Fuzzy variants of the wake phrase to match against transcription
+_WAKE_VARIANTS = [
+    WAKE_PHRASE.lower(),
+    WAKE_PHRASE.lower().replace(" ", ", "),  # "hey, gemini"
+]
+
+
+def _contains_wake_phrase(text: str) -> bool:
+    """Check if text contains the wake phrase (fuzzy)."""
+    t = text.lower().strip()
+    return any(v in t for v in _WAKE_VARIANTS)
+
 
 class LiveSession:
     """Manages a persistent Gemini Live API session with CUA tool calling.
 
     Audio streams continuously (VAD handles speech detection).
     Screen frames are sent on session open and after each tool call.
+    The overlay activates on "hey Gemini" and tracks session state.
     """
 
-    def __init__(self):
+    def __init__(self, overlay=None):
+        self._overlay = overlay  # SiriOverlay or None
         self._client = genai.Client(api_key=GEMINI_API_KEY)
         self._audio_in = AudioInput()
         self._audio_out = AudioOutput()
@@ -42,6 +58,47 @@ class LiveSession:
         self._screen_height = 0
         self._session_start: float = 0.0
         self._warned_duration = False
+        # Wake word / overlay state
+        self._engaged = False  # True after wake phrase detected
+        self._last_output_time: float = 0.0
+
+    # ------------------------------------------------------------------
+    # Overlay helpers
+    # ------------------------------------------------------------------
+
+    def _set_overlay(self, state: str):
+        if self._overlay:
+            self._overlay.set_state(state)
+
+    async def _amplitude_loop(self):
+        """Poll audio amplitude and update overlay (~20fps). Thread-safe:
+        reads simple floats written by audio threads, calls overlay from asyncio."""
+        try:
+            while self._running:
+                await asyncio.sleep(0.05)
+                if not (self._overlay and self._engaged):
+                    continue
+                amp = max(self._audio_in.latest_amplitude,
+                          self._audio_out.latest_amplitude)
+                if amp > 0.005:
+                    self._overlay.set_amplitude(amp)
+        except asyncio.CancelledError:
+            return
+
+    async def _idle_watcher(self):
+        """Fade the overlay to idle after a period of no model output."""
+        try:
+            while self._running:
+                await asyncio.sleep(1.0)
+                if (
+                    self._engaged
+                    and self._last_output_time > 0
+                    and time.monotonic() - self._last_output_time > IDLE_TIMEOUT
+                ):
+                    self._engaged = False
+                    self._set_overlay("idle")
+        except asyncio.CancelledError:
+            return
 
     async def run(self):
         """Open the Live API session and run until stopped or disconnected."""
@@ -96,6 +153,8 @@ class LiveSession:
                     self._send_audio_loop(),
                     self._receive_loop(),
                     self._session_timer(),
+                    self._idle_watcher(),
+                    self._amplitude_loop(),
                 )
             finally:
                 self._audio_in.stop()
@@ -171,26 +230,43 @@ class LiveSession:
             if msg.server_content:
                 sc = msg.server_content
 
+                # --- Model audio output ---
                 if sc.model_turn and sc.model_turn.parts:
                     for part in sc.model_turn.parts:
                         if part.inline_data and part.inline_data.data:
+                            # Model is speaking — update overlay
+                            if self._engaged:
+                                self._set_overlay("speaking")
+                                self._last_output_time = time.monotonic()
                             self._audio_out.play(part.inline_data.data)
 
+                # --- Model output transcription ---
                 if sc.output_transcription and sc.output_transcription.text:
                     text = sc.output_transcription.text
                     if text.strip():
                         print(f"  Gemini: {text}")
+                        self._last_output_time = time.monotonic()
 
+                # --- User input transcription (wake word detection) ---
                 if sc.input_transcription and sc.input_transcription.text:
                     text = sc.input_transcription.text
                     if text.strip():
                         print(f"  You: {text}")
+                        if not self._engaged and _contains_wake_phrase(text):
+                            self._engaged = True
+                            # "activated" auto-transitions to "listening" on the JS side
+                            self._set_overlay("activated")
+                        elif self._engaged:
+                            # User still talking after activation
+                            self._set_overlay("listening")
 
                 if sc.interrupted:
                     self._audio_out.clear()
 
             # Tool calls
             if msg.tool_call:
+                if self._engaged:
+                    self._set_overlay("thinking")
                 await self._handle_tool_calls(msg.tool_call)
 
     # ------------------------------------------------------------------
