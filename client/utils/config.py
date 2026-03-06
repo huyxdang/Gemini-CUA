@@ -22,3 +22,8 @@ SCREENSHOT_WIDTH = 1280
 # Agent loop settings
 MAX_STEPS = 15
 STEP_DELAY = 0.5  # seconds to wait after each action for UI to settle
+
+# Live API settings
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", os.getenv("GOOGLE_API_KEY", ""))
+LIVE_MODEL = os.getenv("LIVE_MODEL", "gemini-2.5-flash-native-audio-preview-12-2025")
+LIVE_VOICE = os.getenv("LIVE_VOICE", "Kore")

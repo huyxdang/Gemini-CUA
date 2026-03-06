@@ -31,6 +31,11 @@ voice = [
     "numpy",
     "pynput",
 ]
+live = [
+    "sounddevice",
+    "numpy",
+    "pynput",
+]
 
 [tool.setuptools.packages.find]
 include = ["client*"]

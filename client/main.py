@@ -449,15 +449,60 @@ def text_main():
         print()
 
 
+async def live_main():
+    """Live API mode: real-time bidirectional voice + screen via Gemini Live API."""
+    from client.live.session import LiveSession
+    from client.voice.hotkey import HotkeyListener
+
+    check_permissions(voice=True)
+
+    print("macOS Computer-Use Agent (Live API Mode)")
+    print("=" * 50)
+    print("Real-time voice + screen via Gemini Live API")
+    print("Speak naturally. Triple-press Escape to quit.\n")
+
+    session = LiveSession()
+
+    loop = asyncio.get_running_loop()
+    hotkey = HotkeyListener()
+    hotkey.start(loop)
+
+    async def kill_watcher():
+        while session._running or not session._session:
+            if hotkey.kill_requested:
+                print("\n  KILL SWITCH: Triple-Escape detected!")
+                session.stop()
+                hotkey.clear_kill()
+                return
+            await asyncio.sleep(0.1)
+
+    try:
+        await asyncio.gather(
+            session.run(),
+            kill_watcher(),
+        )
+    except KeyboardInterrupt:
+        print("\nBye!")
+    finally:
+        session.stop()
+        hotkey.stop()
+
+
 def main():
     parser = argparse.ArgumentParser(description="macOS Computer-Use Agent")
     parser.add_argument(
         "--voice", action="store_true",
         help="Enable voice mode (hold Right Option to speak)",
     )
+    parser.add_argument(
+        "--live", action="store_true",
+        help="Enable Live API mode (real-time voice + screen streaming)",
+    )
     args = parser.parse_args()
 
-    if args.voice:
+    if args.live:
+        asyncio.run(live_main())
+    elif args.voice:
         asyncio.run(voice_main())
     else:
         text_main()
