@@ -452,7 +452,13 @@ def text_main():
 async def live_main():
     """Live API mode: real-time bidirectional voice + screen via Gemini Live API."""
     from client.live.session import LiveSession
+    from client.utils.config import GEMINI_API_KEY
     from client.voice.hotkey import HotkeyListener
+
+    if not GEMINI_API_KEY:
+        print("Error: GEMINI_API_KEY is not set.")
+        print("Set it in .env or as an environment variable.")
+        sys.exit(1)
 
     check_permissions(voice=True)
 
@@ -468,19 +474,35 @@ async def live_main():
     hotkey.start(loop)
 
     async def kill_watcher():
-        while session._running or not session._session:
-            if hotkey.kill_requested:
-                print("\n  KILL SWITCH: Triple-Escape detected!")
-                session.stop()
-                hotkey.clear_kill()
-                return
-            await asyncio.sleep(0.1)
+        """Poll for triple-Escape kill switch and stop the session."""
+        try:
+            while True:
+                if hotkey.kill_requested:
+                    print("\n  KILL SWITCH: Triple-Escape detected!")
+                    session.stop()
+                    hotkey.clear_kill()
+                    return
+                await asyncio.sleep(0.1)
+        except asyncio.CancelledError:
+            return
 
     try:
-        await asyncio.gather(
-            session.run(),
-            kill_watcher(),
+        # Run session and kill watcher; when session ends, cancel the watcher
+        session_task = asyncio.create_task(session.run())
+        watcher_task = asyncio.create_task(kill_watcher())
+
+        done, pending = await asyncio.wait(
+            [session_task, watcher_task],
+            return_when=asyncio.FIRST_COMPLETED,
         )
+
+        for task in pending:
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+
     except KeyboardInterrupt:
         print("\nBye!")
     finally:

@@ -92,18 +92,27 @@ class AudioOutput:
                 break
 
     def _playback_loop(self):
-        stream = sd.RawOutputStream(
-            samplerate=OUTPUT_SAMPLE_RATE,
-            channels=CHANNELS,
-            dtype="int16",
-        )
-        stream.start()
+        try:
+            stream = sd.RawOutputStream(
+                samplerate=OUTPUT_SAMPLE_RATE,
+                channels=CHANNELS,
+                dtype="int16",
+            )
+            stream.start()
+        except Exception as e:
+            print(f"  Audio output error: {e}")
+            return
+
         try:
             while self._running:
                 data = self._queue.get()
                 if data is None:
                     break
-                stream.write(data)
+                try:
+                    stream.write(data)
+                except Exception as e:
+                    print(f"  Audio playback error: {e}")
+                    break
         finally:
             stream.stop()
             stream.close()

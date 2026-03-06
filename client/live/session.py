@@ -4,6 +4,7 @@ import asyncio
 import base64
 import subprocess
 import time
+import traceback
 
 from google import genai
 from google.genai import types
@@ -16,6 +17,12 @@ from client.perception.accessibility import read_accessibility_tree
 from client.safety.guard import enforce_safety
 from client.utils.config import GEMINI_API_KEY, LIVE_MODEL, LIVE_VOICE
 from client.utils.coordinates import screenshot_to_points
+
+# Sessions with images (send_client_content with inline_data) may be treated
+# as audio+video by the API, giving a 2-minute limit. Audio-only is 15 minutes.
+# We track session start time and warn the user before auto-reconnecting.
+SESSION_WARN_SECS = 90  # warn at 90s into a session
+SESSION_MAX_SECS = 110  # proactively reconnect at 110s (before 120s hard limit)
 
 
 class LiveSession:
@@ -33,6 +40,8 @@ class LiveSession:
         self._running = False
         self._screen_width = 0
         self._screen_height = 0
+        self._session_start: float = 0.0
+        self._warned_duration = False
 
     async def run(self):
         """Open the Live API session and run until stopped or disconnected."""
@@ -74,6 +83,8 @@ class LiveSession:
 
             self._audio_in.start()
             self._audio_out.start()
+            self._session_start = time.monotonic()
+            self._warned_duration = False
 
             print("  Connected! Speak naturally.\n")
 
@@ -84,6 +95,7 @@ class LiveSession:
                 await asyncio.gather(
                     self._send_audio_loop(),
                     self._receive_loop(),
+                    self._session_timer(),
                 )
             finally:
                 self._audio_in.stop()
@@ -94,6 +106,22 @@ class LiveSession:
         """Signal the session to stop."""
         self._running = False
         self._audio_in.stop()
+
+    async def _session_timer(self):
+        """Monitor session duration and proactively reconnect before the API limit."""
+        while self._running:
+            await asyncio.sleep(5)
+            elapsed = time.monotonic() - self._session_start
+
+            if not self._warned_duration and elapsed >= SESSION_WARN_SECS:
+                self._warned_duration = True
+                print("  (Session approaching time limit, will reconnect soon)")
+
+            if elapsed >= SESSION_MAX_SECS:
+                print("  Reconnecting to refresh session...")
+                # Break out of _run_session; the outer loop will reconnect
+                self._audio_in.stop()
+                return
 
     # ------------------------------------------------------------------
     # Sending
@@ -208,20 +236,20 @@ class LiveSession:
             match name:
                 case "click":
                     x, y = self._to_screen(args["x"], args["y"])
-                    mouse.click(x, y, args.get("button", "left"))
+                    await asyncio.to_thread(mouse.click, x, y, args.get("button", "left"))
                     return f"Clicked at ({x}, {y})"
 
                 case "double_click":
                     x, y = self._to_screen(args["x"], args["y"])
-                    mouse.double_click(x, y)
+                    await asyncio.to_thread(mouse.double_click, x, y)
                     return f"Double-clicked at ({x}, {y})"
 
                 case "type_text":
-                    keyboard.type_text(args["text"])
+                    await asyncio.to_thread(keyboard.type_text, args["text"])
                     return f"Typed text"
 
                 case "press_key":
-                    keyboard.press_key(args["key"], args.get("modifiers", []))
+                    await asyncio.to_thread(keyboard.press_key, args["key"], args.get("modifiers", []))
                     if args.get("modifiers"):
                         await asyncio.sleep(0.3)
                     combo = "+".join(args.get("modifiers", []) + [args["key"]])
@@ -231,12 +259,13 @@ class LiveSession:
                     x, y = self._to_screen(args["x"], args["y"])
                     direction = args.get("direction", "down")
                     amount = args.get("amount", 3)
-                    mouse.scroll(x, y, direction, amount)
+                    await asyncio.to_thread(mouse.scroll, x, y, direction, amount)
                     return f"Scrolled {direction} at ({x}, {y})"
 
                 case "open_app":
                     app_name = args["app_name"]
-                    result = subprocess.run(
+                    result = await asyncio.to_thread(
+                        subprocess.run,
                         ["open", "-a", app_name],
                         capture_output=True, text=True, timeout=10,
                     )
