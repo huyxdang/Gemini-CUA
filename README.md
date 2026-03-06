@@ -2,10 +2,10 @@
 
 ```
 # install everything 
-pip instslall -e ".[live]"
+pip3 install -e ".[live]"
 
 # run app
-python -m client --live
+python3 -m client --live
 
 ```
 
